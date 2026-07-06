@@ -1,0 +1,12 @@
+[package]
+name = "rust_var"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nalgebra = "0.35.0"
+rayon = "1.12.0"
+
+[[bin]]
+name = "rust_var"
+path = "main.rs"
