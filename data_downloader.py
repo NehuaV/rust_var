@@ -1,11 +1,13 @@
 """Download price history for a list of tickers into data/.
 
-Each file is saved as  data/{period}_{ticker}.csv  with a two-column format
-(Date, <ticker>) that matches what the C++ loader expects.
+Each file is saved as  data/{period}_{ticker}_{date}.csv  with a two-column
+format (Date, Close) that matches what the Rust loader expects.
 
 A SHA-256 hash of every file is stored in data/hashes.json.  A ticker is
-skipped if its CSV already exists and its hash matches the stored value,
-avoiding unnecessary API calls.  Pass --force to bypass the cache.
+skipped if its CSV already exists and its hash matches the stored value for
+today's date, avoiding unnecessary API calls on the same day.  The cache is
+automatically invalidated the next calendar day.  Pass --force to bypass the
+cache regardless.
 
 Usage
 -----
@@ -14,6 +16,7 @@ Usage
     uv run data_downloader.py --force AAPL MSFT    # ignore cache, re-download
 """
 
+import datetime
 import hashlib
 import json
 import pathlib
@@ -121,18 +124,19 @@ DEFAULT_TICKERS = [
     "FIS",  # Fidelity National Info
 ]
 PERIOD = "1y"
+DATE = datetime.date.today().isoformat()   # YYYY-MM-DD — cache key expires daily
 DATA_DIR = pathlib.Path(__file__).parent / "data"
 HASHES_FILE = DATA_DIR / "hashes.json"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _cache_key(ticker: str, period: str) -> str:
-    return f"{period}_{ticker}"
+def _cache_key(ticker: str, period: str, date: str = DATE) -> str:
+    return f"{period}_{ticker}_{date}"
 
 
-def _csv_path(ticker: str, period: str) -> pathlib.Path:
-    return DATA_DIR / f"{_cache_key(ticker, period)}.csv"
+def _csv_path(ticker: str, period: str, date: str = DATE) -> pathlib.Path:
+    return DATA_DIR / f"{_cache_key(ticker, period, date)}.csv"
 
 
 def _sha256(path: pathlib.Path) -> str:

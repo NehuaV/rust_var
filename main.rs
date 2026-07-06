@@ -3,7 +3,6 @@ use std::fs;
 use std::io;
 
 use nalgebra::{DMatrix, DVector};
-use rayon::prelude::*;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -12,17 +11,51 @@ struct Position {
     investment: f64,
 }
 
+/// Returns today's UTC date as "YYYY-MM-DD" using only `std::time`.
+/// Uses Hinnant's civil_from_days algorithm (public domain).
+fn today_ymd() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        / 86400;
+
+    // civil_from_days — maps days-since-Unix-epoch to (y, m, d)
+    let z = days as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 fn load_prices(path: &str) -> io::Result<Vec<f64>> {
-    let content = fs::read_to_string(path)?;
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to read file '{}': {}", path, e);
+            return Err(e.into());
+        }
+    };
+
     let prices = content
         .lines()
         .skip(1)
         .filter(|l| !l.is_empty())
         .filter_map(|line| {
             let comma = line.find(',')?;
+
             line[comma + 1..].trim().parse::<f64>().ok()
         })
         .collect();
+
     return Ok(prices);
 }
 
@@ -32,13 +65,15 @@ fn log_returns(prices: &[f64]) -> Vec<f64> {
 
 // Single-pass mean + variance via Welford's online algorithm
 fn mean_and_variance(v: &[f64]) -> (f64, f64) {
-    let mut mean = 0.0_f64;
-    let mut m2 = 0.0_f64;
+    let mut mean: f64 = 0.0;
+    let mut m2: f64 = 0.0;
+
     for (i, &x) in v.iter().enumerate() {
         let delta = x - mean;
         mean += delta / (i + 1) as f64;
-        m2 = (x - mean).mul_add(delta, m2);
+        m2 += (x - mean) * delta;
     }
+
     return (mean, m2 / (v.len() - 1) as f64);
 }
 
@@ -50,6 +85,7 @@ fn vec_covariance(a: &[f64], mu_a: f64, b: &[f64], mu_b: f64) -> f64 {
         .zip(&b[..n])
         .map(|(&ai, &bi)| (ai - mu_a) * (bi - mu_b))
         .sum();
+
     return cov / (n - 1) as f64;
 }
 
@@ -65,7 +101,7 @@ fn build_cov_matrix(
     let upper: Vec<(usize, usize, f64)> = (0..n)
         .flat_map(|i| (i..n).map(move |j| (i, j)))
         .collect::<Vec<_>>()
-        .into_par_iter()
+        .into_iter()
         .map(|(i, j)| {
             let cov = vec_covariance(
                 &returns[portfolio[i].ticker],
@@ -88,13 +124,14 @@ fn build_cov_matrix(
 // Portfolio dollar variance: x' · Σ · x  (flat row-major Σ)
 fn portfolio_dollar_variance(portfolio: &[Position], sigma: &[f64]) -> f64 {
     let n = portfolio.len();
-    let mut total = 0.0_f64;
+    let mut total: f64 = 0.0;
+
     for i in 0..n {
         for j in 0..n {
-            total = (portfolio[i].investment * portfolio[j].investment)
-                .mul_add(sigma[i * n + j], total);
+            total += portfolio[i].investment * portfolio[j].investment * sigma[i * n + j];
         }
     }
+
     return total;
 }
 
@@ -153,8 +190,9 @@ fn project_simplex(v: &mut [f64], budget: f64) {
     let mut u: Vec<f64> = v.to_vec();
     u.sort_unstable_by(|a, b| b.partial_cmp(a).unwrap()); // descending
 
-    let mut cssv = 0.0_f64; // cumulative sorted-sum
-    let mut rho = 0_usize; // largest index satisfying the condition
+    let mut cssv: f64 = 0.0; // cumulative sorted-sum
+    let mut rho: usize = 0; // largest index satisfying the condition
+
     for (j, &uj) in u.iter().enumerate() {
         cssv += uj;
         if uj - (cssv - budget) / (j + 1) as f64 > 0.0 {
@@ -163,7 +201,8 @@ fn project_simplex(v: &mut [f64], budget: f64) {
     }
 
     // Threshold that uniformly shifts all components so the budget is met.
-    let theta = (u[..=rho].iter().sum::<f64>() - budget) / (rho + 1) as f64;
+    let theta: f64 = (u[..=rho].iter().sum::<f64>() - budget) / (rho + 1) as f64;
+
     for xi in v.iter_mut() {
         *xi = (*xi - theta).max(0.0);
     }
@@ -222,6 +261,7 @@ fn pgd_portfolio(sigma: &[f64], n: usize, budget: f64) -> Vec<f64> {
         // Check convergence: stop when total weight movement < budget · ε
         let delta: f64 = x_new.iter().zip(&x).map(|(a, b)| (a - b).abs()).sum();
         x = x_new;
+
         if delta / budget < 1e-9 {
             break;
         }
@@ -304,9 +344,9 @@ fn main() -> Result<()> {
         .collect();
 
     let all_returns: HashMap<&str, Vec<f64>> = portfolio
-        .par_iter()
+        .iter()
         .map(|pos| -> io::Result<_> {
-            let prices = load_prices(&format!("./data/1y_{}.csv", pos.ticker))?;
+            let prices = load_prices(&format!("./data/1y_{}_{}.csv", pos.ticker, today_ymd()))?;
             return Ok((pos.ticker, log_returns(&prices)));
         })
         .collect::<io::Result<Vec<_>>>()?
@@ -319,9 +359,10 @@ fn main() -> Result<()> {
     }
 
     let stats: Vec<(f64, f64)> = portfolio
-        .par_iter()
+        .iter()
         .map(|pos| mean_and_variance(&all_returns[pos.ticker]))
         .collect();
+
     let (means, variances): (Vec<f64>, Vec<f64>) = stats.into_iter().unzip();
 
     let cov_matrix = build_cov_matrix(&portfolio, &all_returns, &means);
@@ -416,10 +457,7 @@ fn main() -> Result<()> {
         );
     } else {
         // No optimisation — plain VaR report
-        println!(
-            "{:<8}  {:>15}  {:>12}",
-            "Ticker", "Investment", "VaR",
-        );
+        println!("{:<8}  {:>15}  {:>12}", "Ticker", "Investment", "VaR",);
         println!(
             "{:<8}  {:>15}  {:>12}",
             "------", "---------------", "-----------",
@@ -430,10 +468,7 @@ fn main() -> Result<()> {
             let sigma = variances[i].sqrt();
             let var = ALPHA * sigma * pos.investment * DAYS.sqrt();
             undiversified_var += var;
-            println!(
-                "{:<8}  {:>15.2}  {:>12.2}",
-                pos.ticker, pos.investment, var,
-            );
+            println!("{:<8}  {:>15.2}  {:>12.2}", pos.ticker, pos.investment, var,);
         }
 
         let w = 36;
@@ -441,8 +476,14 @@ fn main() -> Result<()> {
         println!("{:─<56}", "");
         println!("{:<w$}  {:>14}", "", "Current");
         println!("{:─<56}", "");
-        println!("{:<w$}  {:>14.2}", "Undiversified VaR (sum):", undiversified_var);
-        println!("{:<w$}  {:>14.2}", "Portfolio VaR (diversified):", portfolio_var);
+        println!(
+            "{:<w$}  {:>14.2}",
+            "Undiversified VaR (sum):", undiversified_var
+        );
+        println!(
+            "{:<w$}  {:>14.2}",
+            "Portfolio VaR (diversified):", portfolio_var
+        );
         println!(
             "{:<w$}  {:>14.2}",
             "Diversification benefit ($):",
