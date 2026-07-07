@@ -23,30 +23,39 @@ uv run data_downloader.py
 # Build (release profile required for performance)
 CARGO_TARGET_DIR=./target cargo build --release
 
-# Run — default (plain VaR report, no optimisation)
+# Run — default (plain VaR report, 99% confidence, 5-day horizon)
 ./target/release/rust_var
 
-# Run — optimise with GMV closed-form (short selling allowed)
+# Run — GMV optimisation, defaults
 ./target/release/rust_var --opt gmv
 
-# Run — optimise with long-only Projected Gradient Descent (x ≥ 0)
+# Run — long-only PGD optimisation, defaults
 ./target/release/rust_var --opt pgd
+
+# Run — custom horizon and confidence level
+./target/release/rust_var --opt gmv --days 10 --confidence-level 0.95
+
+# Show all options
+./target/release/rust_var --help
 ```
 
 > **Note:**  
 > Make sure that all tickers listed in `main.rs` have corresponding CSV files downloaded using `data_downloader.py`.  
 > You can quickly customize which tickers are fetched by editing the `DEFAULT_TICKERS` array in `data_downloader.py`.
 
-Data files must be named `1y_<TICKER>.csv` and contain at least two columns
-`Date,Close` with a single header row.
+Data files must be named `1y_<TICKER>_<YYYY-MM-DD>.csv` (the downloader writes
+today's date automatically) and contain at least two columns `Date,Close` with
+a single header row.
 
 ### CLI Flags
 
-| Flag | Behaviour | Constraint |
-|------|-----------|------------|
-| *(none)* | Plain VaR report — no portfolio optimisation | — |
-| `--opt gmv` | GMV closed-form solution | Budget only — short selling **allowed** |
-| `--opt pgd` | Projected Gradient Descent | Budget **and** `x ≥ 0` (long-only) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--opt <METHOD>` | *(none)* | Optimisation method: `gmv` (short selling allowed) or `pgd` (long-only). Omit for a plain VaR report. |
+| `--days <N>` | `5` | VaR horizon in trading days ($T$). |
+| `--confidence-level <P>` | `0.99` | One-tailed confidence level; the corresponding $\alpha$ is computed via the normal inverse CDF. |
+
+Run `./target/release/rust_var --help` to see all options with their defaults.
 
 ---
 
@@ -54,8 +63,9 @@ Data files must be named `1y_<TICKER>.csv` and contain at least two columns
 
 | Crate | Purpose |
 |-------|---------|
-| `rayon` | Data-parallel file loading, stats, and covariance matrix computation |
+| `clap` | CLI argument parsing (`--opt`, `--days`, `--confidence-level`) |
 | `nalgebra` | Dense matrix inversion for the GMV closed-form solution |
+| `statrs` | Normal inverse CDF for converting a confidence level to $\alpha$ |
 
 ---
 
@@ -102,9 +112,11 @@ for a single position with dollar notional $x_i$ is:
 
 $$\text{VaR}_i = \alpha\,\sigma_i\,x_i\,\sqrt{T}$$
 
-where $\alpha$ is the one-tailed normal quantile ($\alpha = 2.33$ at
-$1 - p = 99\%$, i.e. $p = 0.01$), $\sigma_i$ is the daily return standard
-deviation, and $T = 5$ trading days.
+where $\alpha = \Phi^{-1}(1-p)$ is the one-tailed normal quantile (e.g.
+$\alpha \approx 2.33$ at the default confidence level $1-p = 99\%$),
+$\sigma_i$ is the daily return standard deviation, and $T$ is the VaR horizon
+in trading days. Both $(1-p)$ and $T$ are set via `--confidence-level` and
+`--days` (defaults: `0.99` and `5`).
 
 The **undiversified VaR** sums individual VaRs:
 

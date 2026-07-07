@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 
+use clap::{Parser, ValueEnum};
 use nalgebra::{DMatrix, DVector};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -270,9 +271,6 @@ fn pgd_portfolio(sigma: &[f64], n: usize, budget: f64) -> Vec<f64> {
     return x;
 }
 
-const ALPHA: f64 = 2.33; // 99% one-tailed z-score
-const DAYS: f64 = 5.0;
-
 #[rustfmt::skip]
 const POSITIONS: &[(&str, f64)] = &[
     ("AAPL",  100_000.0), ("MSFT",  100_000.0), ("GOOG",  100_000.0),
@@ -308,35 +306,42 @@ const POSITIONS: &[(&str, f64)] = &[
     ("AXP",   100_000.0), ("FIS",   100_000.0),
 ];
 
+/// Portfolio optimisation method to apply after computing VaR.
+#[derive(Clone, ValueEnum)]
 enum OptMethod {
-    None,
+    /// Global Minimum Variance — closed-form, short selling allowed.
     Gmv,
+    /// Long-only GMV via Projected Gradient Descent (x ≥ 0).
     Pgd,
 }
 
-fn parse_opt_method() -> Result<OptMethod> {
-    let args: Vec<String> = std::env::args().collect();
-    for i in 0..args.len() {
-        if args[i] == "--opt" {
-            let value = args
-                .get(i + 1)
-                .ok_or("--opt requires a value: gmv or pgd")?;
-            return match value.as_str() {
-                "gmv" => Ok(OptMethod::Gmv),
-                "pgd" => Ok(OptMethod::Pgd),
-                other => Err(format!("unknown --opt value '{}'; choose gmv or pgd", other).into()),
-            };
-        }
-    }
-    Ok(OptMethod::None)
+#[derive(Parser)]
+#[command(about = "Parametric VaR calculator with optional portfolio optimisation")]
+struct Args {
+    /// Portfolio optimisation method (omit for a plain VaR report).
+    #[arg(long, value_name = "METHOD")]
+    opt: Option<OptMethod>,
+
+    /// VaR horizon in trading days.
+    #[arg(long, default_value_t = 5.0)]
+    days: f64,
+
+    /// One-tailed confidence level (e.g. 0.99 for 99%).
+    #[arg(long, default_value_t = 0.99)]
+    confidence_level: f64,
+}
+
+use statrs::distribution::{ContinuousCDF, Normal};
+
+fn calculate_alpha(confidence_level: f64) -> f64 {
+    let n = Normal::new(0.0, 1.0).expect("Invalid distribution parameters");
+    n.inverse_cdf(confidence_level)
 }
 
 fn main() -> Result<()> {
-    // ── CLI flags ─────────────────────────────────────────────────────────────
-    // (no flag)   Plain VaR report — no portfolio optimisation.
-    // --opt gmv   Global Minimum Variance, closed-form (short selling allowed).
-    // --opt pgd   Long-only GMV via Projected Gradient Descent (x ≥ 0).
-    let opt_method = parse_opt_method()?;
+    let args = Args::parse();
+    let alpha = calculate_alpha(args.confidence_level);
+    let days = args.days;
 
     let portfolio: Vec<Position> = POSITIONS
         .iter()
@@ -369,20 +374,20 @@ fn main() -> Result<()> {
     let total_wealth: f64 = portfolio.iter().map(|p| p.investment).sum();
 
     // ── Choose optimisation method ────────────────────────────────────────────
-    let opt_weights_and_label: Option<(Vec<f64>, &str)> = match opt_method {
-        OptMethod::Gmv => Some((
+    let opt_weights_and_label: Option<(Vec<f64>, &str)> = match args.opt {
+        Some(OptMethod::Gmv) => Some((
             gmv_portfolio(&cov_matrix, portfolio.len(), total_wealth),
             "Post-Opt (GMV)",
         )),
-        OptMethod::Pgd => Some((
+        Some(OptMethod::Pgd) => Some((
             pgd_portfolio(&cov_matrix, portfolio.len(), total_wealth),
             "Post-Opt (PGD)",
         )),
-        OptMethod::None => None,
+        None => None,
     };
 
     let portfolio_var =
-        ALPHA * portfolio_dollar_variance(&portfolio, &cov_matrix).sqrt() * DAYS.sqrt();
+        alpha * portfolio_dollar_variance(&portfolio, &cov_matrix).sqrt() * days.sqrt();
 
     // ── Per-position table ────────────────────────────────────────────────────
     if let Some((ref opt_weights, method_label)) = opt_weights_and_label {
@@ -404,9 +409,9 @@ fn main() -> Result<()> {
         let mut opt_undiversified_var = 0.0_f64;
         for (i, pos) in portfolio.iter().enumerate() {
             let sigma = variances[i].sqrt();
-            let pre_var = ALPHA * sigma * pos.investment * DAYS.sqrt();
+            let pre_var = alpha * sigma * pos.investment * days.sqrt();
             let opt_w = opt_weights[i];
-            let post_var = ALPHA * sigma * opt_w.abs() * DAYS.sqrt();
+            let post_var = alpha * sigma * opt_w.abs() * days.sqrt();
 
             undiversified_var += pre_var;
             opt_undiversified_var += post_var;
@@ -427,7 +432,7 @@ fn main() -> Result<()> {
             .flat_map(|i| (0..n).map(move |j| (i, j)))
             .map(|(i, j)| opt_weights[i] * opt_weights[j] * cov_matrix[i * n + j])
             .sum();
-        let opt_portfolio_var = ALPHA * opt_dollar_variance.sqrt() * DAYS.sqrt();
+        let opt_portfolio_var = alpha * opt_dollar_variance.sqrt() * days.sqrt();
 
         let w = 36;
         println!();
@@ -466,7 +471,7 @@ fn main() -> Result<()> {
         let mut undiversified_var = 0.0_f64;
         for (i, pos) in portfolio.iter().enumerate() {
             let sigma = variances[i].sqrt();
-            let var = ALPHA * sigma * pos.investment * DAYS.sqrt();
+            let var = alpha * sigma * pos.investment * days.sqrt();
             undiversified_var += var;
             println!("{:<8}  {:>15.2}  {:>12.2}", pos.ticker, pos.investment, var,);
         }
