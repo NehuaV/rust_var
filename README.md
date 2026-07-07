@@ -87,9 +87,11 @@ Rather than making two passes (one for the mean, one for the variance), the
 code uses **Welford's online algorithm** which accumulates both in a single
 loop and is numerically stable:
 
-$$\delta_t = r_t - \bar{r}_{t-1}, \qquad
+$$
+\delta_t = r_t - \bar{r}_{t-1}, \qquad
 \bar{r}_t = \bar{r}_{t-1} + \frac{\delta_t}{t}, \qquad
-M_{2,t} = M_{2,t-1} + (r_t - \bar{r}_t)\,\delta_t$$
+M_{2,t} = M_{2,t-1} + (r_t - \bar{r}_t)\,\delta_t
+$$
 
 Sample variance: $s^2 = M_{2,T} / (T - 1)$
 
@@ -148,8 +150,10 @@ risk reduction from holding assets that do not move in perfect lockstep.
 Given a fixed total budget $W = \sum_i x_i$, find the investment vector
 $\mathbf{x}^*$ that minimises portfolio variance:
 
-$$\min_{\mathbf{x}} \; \mathbf{x}^\top \Sigma\, \mathbf{x}
-\quad \text{subject to} \quad \mathbf{1}^\top \mathbf{x} = W$$
+$$
+\min_{\mathbf{x}} \; \mathbf{x}^\top \Sigma\, \mathbf{x}
+\quad \text{subject to} \quad \mathbf{1}^\top \mathbf{x} = W
+$$
 
 Short selling is allowed (no non-negativity constraint). This is the
 **Global Minimum Variance (GMV)** portfolio.
@@ -158,13 +162,17 @@ Short selling is allowed (no non-negativity constraint). This is the
 
 Form the Lagrangian:
 
-$$\mathcal{L}(\mathbf{x}, \lambda) = \mathbf{x}^\top \Sigma\, \mathbf{x}
-  - \lambda\!\left(\mathbf{1}^\top \mathbf{x} - W\right)$$
+$$
+\mathcal{L}(\mathbf{x}, \lambda) = \mathbf{x}^\top \Sigma\, \mathbf{x}
+  - \lambda\!\left(\mathbf{1}^\top \mathbf{x} - W\right)
+$$
 
 Setting the gradient to zero:
 
-$$\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = 2\,\Sigma\,\mathbf{x} - \lambda\,\mathbf{1} = \mathbf{0}
-\implies \mathbf{x} = \frac{\lambda}{2}\,\Sigma^{-1}\mathbf{1}$$
+$$
+\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = 2\,\Sigma\,\mathbf{x} - \lambda\,\mathbf{1} = \mathbf{0}
+\implies \mathbf{x} = \frac{\lambda}{2}\,\Sigma^{-1}\mathbf{1}
+$$
 
 Substitute into the budget constraint $\mathbf{1}^\top \mathbf{x} = W$:
 
@@ -213,8 +221,10 @@ correlation names (`INTC`, `TSLA`, `CI`, `AMAT`, etc.).
 
 Add a non-negativity constraint to the GMV problem:
 
-$$\min_{\mathbf{x}} \; \mathbf{x}^\top \Sigma\, \mathbf{x}
-\quad \text{s.t.} \quad \mathbf{1}^\top \mathbf{x} = W,\quad x_i \geq 0 \;\forall i$$
+$$
+\min_{\mathbf{x}} \; \mathbf{x}^\top \Sigma\, \mathbf{x}
+\quad \text{s.t.} \quad \mathbf{1}^\top \mathbf{x} = W, \quad x_i \geq 0 \;\forall i
+$$
 
 The feasible set is the **scaled probability simplex** $\mathcal{S} = \{\mathbf{x} : x_i \geq 0,\; \mathbf{1}^\top\mathbf{x} = W\}$ — no closed-form solution exists; we need iterative optimisation.
 
