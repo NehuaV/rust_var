@@ -122,7 +122,7 @@ in trading days. Both $(1-p)$ and $T$ are set via `--confidence-level` and
 
 The **undiversified VaR** sums individual VaRs:
 
-$$U\text{VaR}_\Pi = \sum_i \text{VaR}_i$$
+$$\text{UVaR}_\Pi = \sum_i \text{VaR}_i$$
 
 This assumes perfect positive correlation across all positions — a worst-case
 upper bound.
@@ -138,7 +138,7 @@ The diversified portfolio VaR over $T$ days is:
 
 $$\text{VaR}_\Pi(1-p;\,T) = \alpha\sqrt{\mathbf{x}^\top \Sigma\, \mathbf{x}}\,\sqrt{T}$$
 
-The **diversification benefit** is $U\text{VaR}_\Pi - \text{VaR}_\Pi$ — the
+The **diversification benefit** is $\text{UVaR}_\Pi - \text{VaR}_\Pi$ — the
 risk reduction from holding assets that do not move in perfect lockstep.
 
 ---
@@ -162,17 +162,11 @@ Short selling is allowed (no non-negativity constraint). This is the
 
 Form the Lagrangian:
 
-$$
-\mathcal{L}(\mathbf{x}, \lambda) = \mathbf{x}^\top \Sigma\, \mathbf{x}
-  - \lambda\!\left(\mathbf{1}^\top \mathbf{x} - W\right)
-$$
+$$\mathcal{L}(\mathbf{x}, \lambda) = \mathbf{x}^\top \Sigma\, \mathbf{x} - \lambda\left(\mathbf{1}^\top \mathbf{x} - W\right)$$
 
 Setting the gradient to zero:
 
-$$
-\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = 2\,\Sigma\,\mathbf{x} - \lambda\,\mathbf{1} = \mathbf{0}
-\implies \mathbf{x} = \frac{\lambda}{2}\,\Sigma^{-1}\mathbf{1}
-$$
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = 2\,\Sigma\,\mathbf{x} - \lambda\,\mathbf{1} = \mathbf{0} \implies \mathbf{x} = \frac{\lambda}{2}\,\Sigma^{-1}\mathbf{1}$$
 
 Substitute into the budget constraint $\mathbf{1}^\top \mathbf{x} = W$:
 
