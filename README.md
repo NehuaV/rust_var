@@ -271,18 +271,3 @@ for _ in 0..10_000 {
 - **Static allocation.** The model ignores transaction costs, liquidity
   constraints, and does not rebalance over time.
 
----
-
-## Performance
-
-Benchmarked with `hyperfine --shell=none --warmup 10` on Apple Silicon (90
-tickers, ~252 daily observations each):
-
-| Binary | Mean | Notes |
-|--------|------|-------|
-| Rust sequential (-O3) | 6.8 ms | Flat matrix, Welford, cached means |
-| Rust + rayon (-O3) | **4.6 ms** | Parallel I/O + parallel cov matrix |
-
-The dominant cost at this scale is reading 90 CSV files from disk. The
-covariance matrix computation (8,100 → 4,095 unique pairs after symmetry
-exploitation) is fully parallelised with `rayon`.
