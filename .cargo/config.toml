@@ -1,0 +1,2 @@
+[build]
+rustflags = ["-A", "clippy::implicit_return", "-A", "clippy::needless_return"]
